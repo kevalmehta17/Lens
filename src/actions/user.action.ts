@@ -3,6 +3,8 @@
 import prisma from "@/lib/prisma";
 import { auth, currentUser } from "@clerk/nextjs/server";
 
+//This function syncs the current user with the database.
+// It checks if the user exists in the database, and if not, creates a new user record.
 export async function syncUser() {
     try {
         const { userId } = await auth();     // Gets the current user’s ID (from JWT/session)
@@ -12,7 +14,7 @@ export async function syncUser() {
         // Check if the user already exists in the database
         const existingUser = await prisma.user.findUnique({
             where: {
-                id: userId,
+                clerkId: userId,
             }
         })
         if (existingUser) {
@@ -22,7 +24,6 @@ export async function syncUser() {
         // If user does not exist, create a new user in the database
         const dbUser = await prisma.user.create({
             data: {
-                id: userId,
                 clerkId: userId,
                 name: `${user.firstName || ""} ${user.lastName || ""}`,
                 // keval@gmail.com -> keval
@@ -41,6 +42,8 @@ export async function syncUser() {
     }
 }
 
+
+// this function retrieves a user from the database by their Clerk ID
 export async function getUserByClerkId(clerkId: string) {
     return await prisma.user.findUnique({
         where: {
@@ -56,4 +59,65 @@ export async function getUserByClerkId(clerkId: string) {
             }
         }
     })
+}
+
+// This function retrieves the current user's ID from the database.
+export async function getDbUserId() {
+    const { userId: clerkId } = await auth();
+    if (!clerkId) {
+        return null;
+    }
+
+    const user = await getUserByClerkId(clerkId);
+
+    if (!user) throw new Error("User not found in database");
+
+    return user.id
+}
+
+export async function getRandomUsers() {
+    try {
+        const userId = await getDbUserId();
+
+        if (!userId) {
+            // Handle the case where userId is null, e.g., return an empty array or throw an error
+            return [];
+        }
+
+        // get 3 random users from the database excluding the current user and user's we follow
+        const randomUsers = await prisma.user.findMany({
+            where: {
+                AND: [
+                    { NOT: { id: userId } }, // Exclude current user
+                    {
+                        NOT: {
+                            followers: {
+                                // 'some' is used to check if the userId exists in the followers relation
+                                some: {
+                                    followerId: userId // Exclude users we follow
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+            select: {
+                id: true,
+                name: true,
+                username: true,
+                image: true,
+                _count: {
+                    select: {
+                        followers: true,
+                    }
+                }
+            },
+            take: 3, // Limit to 3 random users
+        })
+        return randomUsers;
+
+    } catch (error) {
+        console.error("Error fetching random users:", error);
+        throw new Error("Failed to fetch random users");
+    }
 }
