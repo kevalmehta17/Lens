@@ -114,6 +114,7 @@ export async function toggleFollow(targetUserId: string) {
 
         if (userId === targetUserId) throw new Error("You cannot follow yourself");
 
+        // Check if the follow relationship already exists
         const existingFollow = await prisma.follows.findUnique({
             where: {
                 followerId_followingId: {
@@ -134,7 +135,7 @@ export async function toggleFollow(targetUserId: string) {
                 },
             });
         } else {
-            // follow
+            // This transaction creates a follow relationship and a notification
             await prisma.$transaction([
                 prisma.follows.create({
                     data: {
